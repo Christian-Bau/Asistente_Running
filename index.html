@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asistente de Salidas al Aire Libre</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS para los mapas -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+        }
+        .main-container {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+        }
+        .card {
+            background-color: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        .btn-primary {
+            background-color: #f59e0b;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            background-color: #d97706;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        .btn-secondary {
+            background-color: #4b5563;
+            transition: all 0.3s ease;
+        }
+        .btn-secondary:hover {
+            background-color: #374151;
+        }
+        .input-field {
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .hidden {
+            display: none;
+        }
+        #notification {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        #notification.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        #notification.success {
+            background-color: #22c55e;
+        }
+        #notification.error {
+            background-color: #ef4444;
+        }
+        /* Estilos para el modal del mapa */
+        #map-modal {
+            z-index: 50;
+        }
+        #map-container .leaflet-popup-content-wrapper, #map-container .leaflet-popup-tip {
+            background: #2d3748; /* gray-800 */
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body class="main-container text-white min-h-screen flex items-center justify-center p-4">
+
+    <div id="app-container" class="w-full max-w-2xl mx-auto">
+
+        <h1 id="main-title" class="text-3xl md:text-4xl font-bold text-center mb-8 text-shadow-lg">ASISTENTE DE SALIDAS AL AIRE LIBRE</h1>
+
+        <div id="welcome-section" class="card rounded-xl p-8 text-center">
+            <h2 class="text-2xl font-bold mb-4">¡Hola! ¿Cuál es tu nombre?</h2>
+            <input type="text" id="name-input" class="input-field w-full max-w-sm mx-auto p-3 rounded-lg text-white placeholder-gray-300 text-center" placeholder="Escribe tu nombre aquí">
+            <button id="submit-name-btn" class="btn-primary text-white font-bold py-3 px-6 rounded-lg mt-4">Continuar</button>
+        </div>
+
+        <div id="main-panel" class="hidden">
+            <div class="text-right mb-4">
+                 <button id="home-btn" class="btn-secondary text-white font-bold py-2 px-4 rounded-lg"><i class="fas fa-home"></i> Volver al Inicio</button>
+            </div>
+            <div id="greeting-section" class="text-center mb-8"></div>
+            
+            <div id="challenge-section" class="card rounded-xl p-8 text-center"></div>
+
+            <div id="location-prompt-section" class="card rounded-xl p-8 mt-6 text-center hidden">
+                <h3 class="text-2xl font-bold mb-4">¿Dónde correrás hoy?</h3>
+                <p class="mb-4">Ingresa tu ciudad para obtener el pronóstico del tiempo real.</p>
+                <input type="text" id="city-input" class="input-field w-full max-w-sm mx-auto p-3 rounded-lg text-white placeholder-gray-300 text-center" placeholder="Ej: Buenos Aires, Argentina">
+                <button id="check-weather-btn" class="btn-primary text-white font-bold py-3 px-6 rounded-lg mt-4">Verificar Clima</button>
+            </div>
+
+            <div id="weather-section" class="card rounded-xl p-8 mt-6 text-center hidden">
+                <h3 class="text-2xl font-bold mb-4">Condiciones Climáticas Actuales</h3>
+                <div id="weather-info" class="text-lg"></div>
+                <div id="decision-buttons" class="mt-6 hidden">
+                    <button id="start-run-btn" class="btn-primary text-white font-bold py-3 px-6 rounded-lg mr-4">¡Empezar ahora!</button>
+                    <button id="cancel-run-btn" class="btn-secondary text-white font-bold py-3 px-6 rounded-lg">Mejor otro día</button>
+                </div>
+            </div>
+
+            <div id="run-progress-section" class="card rounded-xl p-8 mt-6 text-center hidden">
+                <h3 class="text-2xl font-bold mb-4">¡En Carrera!</h3>
+                <div class="grid grid-cols-2 gap-4 my-4">
+                    <div>
+                        <p class="text-sm opacity-75">TIEMPO</p>
+                        <div class="text-4xl font-bold" id="timer">00:00:00</div>
+                    </div>
+                    <div>
+                        <p class="text-sm opacity-75">DISTANCIA</p>
+                        <div class="text-4xl font-bold" id="distance">0.00 km</div>
+                    </div>
+                </div>
+                <p id="gps-status" class="text-sm text-amber-300">Obteniendo señal GPS...</p>
+                <button id="stop-run-btn" class="btn-primary bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg mt-6">Finalizar Carrera</button>
+            </div>
+            
+            <div id="profile-section" class="mt-8 text-center">
+                 <button id="toggle-profile-btn" class="btn-secondary text-white font-bold py-2 px-4 rounded-lg">
+                    <i class="fas fa-user"></i> Ver/Ocultar Perfil de Usuario
+                </button>
+                <div id="profile-content" class="card rounded-xl p-6 mt-4 hidden">
+                    <h3 class="text-2xl font-bold mb-4">Libro de Rutas</h3>
+                    <div id="runs-history" class="text-left"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="notification"></div>
+
+    <!-- Modal para el Mapa -->
+    <div id="map-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden">
+        <div class="bg-gray-900 card rounded-lg p-4 w-full max-w-4xl relative">
+            <button id="close-map-btn" class="absolute top-2 right-3 text-white text-3xl font-bold z-10">&times;</button>
+            <h3 class="text-xl font-bold mb-4 text-center">Ruta Realizada</h3>
+            <div id="map-container" style="height: 70vh; border-radius: 8px;"></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+           apiKey: "AIzaSyD3Nkhk6RwfHwecnZa-ZQHlENbeZwkR9QM",
+           authDomain: "asistente-running-app.firebaseapp.com",
+           projectId: "asistente-running-app",
+           storageBucket: "asistente-running-app.firebasestorage.app",
+           messagingSenderId: "930945677926",
+           appId: "1:930945677926:web:54e66beafe7497ecec8ba7",
+           measurementId: "G-HCBY9RX0L0"
+        };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-running-app';
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let userId = null, userName = '', runs = [], timerInterval, seconds = 0, watchId = null, totalDistance = 0, lastPosition = null, routeCoordinates = [], map, currentCity = '';
+
+        const welcomeSection = document.getElementById('welcome-section'), mainPanel = document.getElementById('main-panel'), nameInput = document.getElementById('name-input'), submitNameBtn = document.getElementById('submit-name-btn'), homeBtn = document.getElementById('home-btn'), greetingSection = document.getElementById('greeting-section'), challengeSection = document.getElementById('challenge-section'), locationPromptSection = document.getElementById('location-prompt-section'), cityInput = document.getElementById('city-input'), checkWeatherBtn = document.getElementById('check-weather-btn'), weatherSection = document.getElementById('weather-section'), weatherInfo = document.getElementById('weather-info'), decisionButtons = document.getElementById('decision-buttons'), startRunBtn = document.getElementById('start-run-btn'), cancelRunBtn = document.getElementById('cancel-run-btn'), runProgressSection = document.getElementById('run-progress-section'), stopRunBtn = document.getElementById('stop-run-btn'), timerDisplay = document.getElementById('timer'), distanceDisplay = document.getElementById('distance'), gpsStatus = document.getElementById('gps-status'), toggleProfileBtn = document.getElementById('toggle-profile-btn'), profileContent = document.getElementById('profile-content'), runsHistory = document.getElementById('runs-history'), notification = document.getElementById('notification'), mapModal = document.getElementById('map-modal'), closeMapBtn = document.getElementById('close-map-btn'), mapContainer = document.getElementById('map-container');
+
+        const showNotification = (message, type = 'success') => {
+            notification.textContent = message;
+            notification.className = '';
+            notification.classList.add(type, 'show');
+            setTimeout(() => { notification.classList.remove('show'); }, 3000);
+        };
+
+        onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        // ... (esta parte no cambia)
+    } else {
+        try {
+            // Se elimina la lógica del token y se deja solo esto:
+            await signInAnonymously(auth);
+        } catch (error) {
+            console.error("Authentication failed:", error);
+            showNotification("Falló la autenticación.", "error");
+        }
+    }
+});
+
+        const showWelcomeScreen = () => {
+            welcomeSection.classList.remove('hidden');
+            mainPanel.classList.add('hidden');
+        };
+        
+        const resetToMainView = () => {
+            welcomeSection.classList.add('hidden');
+            mainPanel.classList.remove('hidden');
+            challengeSection.classList.remove('hidden');
+            locationPromptSection.classList.add('hidden');
+            weatherSection.classList.add('hidden');
+            runProgressSection.classList.add('hidden');
+            displayGreetingAndChallenge();
+        }
+
+        const displayGreetingAndChallenge = () => {
+            greetingSection.innerHTML = `<h2 class="text-3xl font-bold">¡Bienvenido de nuevo, ${userName}!</h2><p class="text-lg mt-2">Voy a llevar tu agenda de movimientos, proponerte rutas y ayudarte a mejorar.</p>`;
+            let challengeHtml = '';
+            if (runs.length === 0) {
+                challengeHtml = `<h3 class="text-2xl font-bold mb-2">¿Cómo te encuentras hoy para un nuevo desafío?</h3><p class="mb-4">Para empezar, la primera ruta la decides tú. Cuando estés listo, dime dónde correrás para verificar el clima.</p><button id="prompt-location-btn" class="btn-primary text-white font-bold py-3 px-6 rounded-lg">Definir Ruta</button>`;
+            } else {
+                const lastRun = runs[0];
+                const newDistance = (lastRun.distance * 1.05).toFixed(2);
+                challengeHtml = `<h3 class="text-2xl font-bold mb-2">¿Listo para el desafío de hoy, ${userName}?</h3><p class="mb-4">Basado en tu última carrera, te propongo un nuevo reto: correr <strong>${newDistance} km</strong>. ¡Vamos a superar tus límites!</p><button id="prompt-location-btn" class="btn-primary text-white font-bold py-3 px-6 rounded-lg">¡Acepto! Verificar Clima</button>`;
+            }
+            challengeSection.innerHTML = challengeHtml;
+            document.getElementById('prompt-location-btn').addEventListener('click', () => {
+                challengeSection.classList.add('hidden');
+                locationPromptSection.classList.remove('hidden');
+            });
+        };
+        
+        const checkWeather = async () => {
+            const city = cityInput.value.trim();
+            if (!city) { showNotification("Por favor, ingresa una ciudad.", "error"); return; }
+            locationPromptSection.classList.add('hidden');
+            weatherSection.classList.remove('hidden');
+            weatherInfo.innerHTML = '<p>Obteniendo coordenadas y datos del clima...</p>';
+            decisionButtons.classList.add('hidden');
+            try {
+                const geoResponse = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`);
+                const geoData = await geoResponse.json();
+                if (!geoData.results || geoData.results.length === 0) throw new Error("No se pudo encontrar la ciudad.");
+                const { latitude, longitude, name } = geoData.results[0];
+                currentCity = name; // Guardar el nombre de la ciudad
+                const weatherResponse = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
+                const weatherData = await weatherResponse.json();
+                const { temperature, windspeed } = weatherData.current_weather;
+                weatherInfo.innerHTML = `<p class="font-bold text-xl mb-3">Clima en ${name}</p><p><i class="fas fa-thermometer-half"></i> <strong>Temperatura:</strong> ${temperature}°C</p><p class="mt-2"><i class="fas fa-wind"></i> <strong>Viento:</strong> ${windspeed} km/h</p><p class="mt-4">Con estas condiciones, ¿deseas continuar?</p>`;
+                decisionButtons.classList.remove('hidden');
+            } catch (error) {
+                console.error("Error fetching weather:", error);
+                weatherInfo.innerHTML = `<p class="text-red-400">${error.message}. Inténtalo de nuevo.</p>`;
+                setTimeout(resetToMainView, 3000);
+            }
+        };
+
+        const startRun = () => {
+            weatherSection.classList.add('hidden');
+            runProgressSection.classList.remove('hidden');
+            seconds = 0; totalDistance = 0; lastPosition = null; routeCoordinates = [];
+            timerDisplay.textContent = '00:00:00';
+            distanceDisplay.textContent = '0.00 km';
+            timerInterval = setInterval(() => {
+                seconds++;
+                const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+                const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+                const s = String(seconds % 60).padStart(2, '0');
+                timerDisplay.textContent = `${h}:${m}:${s}`;
+            }, 1000);
+            if (!navigator.geolocation) { gpsStatus.textContent = "Geolocalización no es soportada."; return; }
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    gpsStatus.textContent = "Señal GPS activa.";
+                    const { latitude, longitude } = position.coords;
+                    routeCoordinates.push([latitude, longitude]);
+                    if (lastPosition) {
+                        totalDistance += getDistanceFromLatLonInKm(lastPosition.latitude, lastPosition.longitude, latitude, longitude);
+                        distanceDisplay.textContent = `${totalDistance.toFixed(2)} km`;
+                    }
+                    lastPosition = { latitude, longitude };
+                },
+                (error) => {
+                    gpsStatus.textContent = `Error de GPS: ${error.message}`;
+                    showNotification("No se puede obtener la ubicación. Asegúrate de haber dado los permisos.", "error");
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        };
+        
+        const stopRun = async () => {
+            clearInterval(timerInterval);
+            if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+            const newRun = {
+                date: new Date().toISOString(),
+                duration: timerDisplay.textContent,
+                distance: parseFloat(totalDistance.toFixed(2)),
+                weather: weatherInfo.innerText,
+                userName: userName,
+                city: currentCity, // Guardar la ciudad
+                route: JSON.stringify(routeCoordinates)
+            };
+            try {
+                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/runs`), newRun);
+                showNotification('¡Carrera finalizada y guardada en tu perfil!');
+                await loadRuns();
+            } catch (error) {
+                console.error("Error saving run: ", error);
+                showNotification('Hubo un error al guardar tu carrera.', 'error');
+            }
+            resetToMainView();
+        };
+
+        const loadRuns = async () => {
+            try {
+                const runsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/runs`);
+                const q = query(runsCollectionRef);
+                const querySnapshot = await getDocs(q);
+                let fetchedRuns = [];
+                querySnapshot.forEach((doc) => { fetchedRuns.push({ id: doc.id, ...doc.data() }); });
+                runs = fetchedRuns.sort((a, b) => new Date(b.date) - new Date(a.date));
+                renderRunsHistory();
+            } catch (error) { console.error("Error loading runs:", error); }
+        };
+
+        const renderRunsHistory = () => {
+            if (runs.length === 0) { runsHistory.innerHTML = '<p>Aún no has registrado ninguna carrera.</p>'; return; }
+            runsHistory.innerHTML = runs.map(run => `
+                <div class="border-b-2 border-blue-400 py-4 mb-4">
+                    <p><strong>Lugar:</strong> ${run.city || 'No especificado'}</p>
+                    <p><strong>Fecha:</strong> ${new Date(run.date).toLocaleString('es-AR')}</p>
+                    <p><strong>Distancia:</strong> ${run.distance} km</p>
+                    <p><strong>Duración:</strong> ${run.duration}</p>
+                    <details class="mt-2 cursor-pointer"><summary class="text-amber-300">Ver Clima</summary><p class="mt-1 text-sm whitespace-pre-wrap">${run.weather}</p></details>
+                    ${run.route && JSON.parse(run.route).length > 1 ? `<button class="view-route-btn mt-2 text-amber-300 hover:text-amber-500 font-bold" data-route='${run.route}'>Ver Ruta en Mapa</button>` : ''}
+                </div>
+            `).join('');
+        };
+        
+        const displayRouteMap = (routeString) => {
+            mapModal.classList.remove('hidden');
+            const coordinates = JSON.parse(routeString);
+            if (coordinates.length < 2) { mapContainer.innerHTML = "<p>No hay suficientes datos de ruta para mostrar un mapa.</p>"; return; }
+            if (map) { map.remove(); }
+            map = L.map('map-container').setView(coordinates[0], 16);
+            L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                maxZoom: 17,
+                attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+            }).addTo(map);
+            const polyline = L.polyline(coordinates, {color: '#f59e0b', weight: 5}).addTo(map);
+            L.marker(coordinates[0]).addTo(map).bindPopup('<strong>Inicio</strong>').openPopup();
+            L.marker(coordinates[coordinates.length - 1]).addTo(map).bindPopup('<strong>Fin</strong>');
+            map.fitBounds(polyline.getBounds().pad(0.1));
+        };
+
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            const R = 6371; const dLat = deg2rad(lat2-lat1); const dLon = deg2rad(lon2-lon1); 
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            return R * c;
+        }
+        function deg2rad(deg) { return deg * (Math.PI/180) }
+
+        submitNameBtn.addEventListener('click', async () => {
+            const name = nameInput.value.trim();
+            if (name && userId) {
+                userName = name;
+                try {
+                    await setDoc(doc(db, `artifacts/${appId}/users/${userId}/profile`, 'info'), { name: userName });
+                    resetToMainView();
+                    await loadRuns();
+                } catch (error) {
+                    console.error("Error saving name: ", error);
+                    showNotification('No se pudo guardar tu nombre.', 'error');
+                }
+            }
+        });
+        
+        runsHistory.addEventListener('click', (e) => {
+            if (e.target.classList.contains('view-route-btn')) {
+                displayRouteMap(e.target.dataset.route);
+            }
+        });
+
+        homeBtn.addEventListener('click', showWelcomeScreen);
+        checkWeatherBtn.addEventListener('click', checkWeather);
+        startRunBtn.addEventListener('click', startRun);
+        cancelRunBtn.addEventListener('click', resetToMainView);
+        stopRunBtn.addEventListener('click', stopRun);
+        toggleProfileBtn.addEventListener('click', () => { profileContent.classList.toggle('hidden'); });
+        closeMapBtn.addEventListener('click', () => { mapModal.classList.add('hidden'); });
+    </script>
+</body>
+</html>
